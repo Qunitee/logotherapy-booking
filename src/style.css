@@ -1,0 +1,59 @@
+/* Основна сітка календаря */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+/* Клітинка дня */
+.day {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.day:hover:not(.empty):not(.disabled) {
+  background-color: #e9ecef;
+  border: 1px solid #0d6efd;
+}
+
+.day.selected {
+  background-color: #0d6efd;
+  color: white;
+  border: none;
+}
+
+.day.today {
+  border: 2px solid #ffc107; /* Жовта рамка для сьогодні */
+}
+
+.day.empty {
+  background-color: transparent;
+  cursor: default;
+}
+
+.day.disabled {
+  color: #ccc;
+  cursor: not-allowed;
+  background-color: #fff;
+}
+
+/* Слоти часу */
+.time-slot {
+  min-width: 80px;
+}
+
+#articles-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#articles-list::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
