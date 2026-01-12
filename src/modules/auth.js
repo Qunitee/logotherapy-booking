@@ -17,22 +17,45 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
 
     if (!loginForm || !registerForm || !logoutBtn) return;
 
+    // --- РЕЄСТРАЦІЯ ---
     registerForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const name = document.getElementById('register-name').value.trim();
-        const email = document.getElementById('register-email').value.trim().toLowerCase();
+        const emailInput = document.getElementById('register-email');
+        const email = emailInput.value.trim().toLowerCase();
         const password = document.getElementById('register-password').value.trim();
 
+        // 1. Базова валідація полів
         if (!name || name.length < 2 || !validateEmail(email) || password.length < 6) {
             alert('Перевірте коректність введених даних');
             return;
         }
 
+        // 2. ПЕРЕВІРКА НА УНІКАЛЬНІСТЬ EMAIL
+        const allUsers = getAllUsers();
+
+        // Шукаємо, чи є вже хтось з такою поштою
+        const existingUser = allUsers.find(user => user.email === email);
+
+        if (existingUser) {
+            alert('Користувач з таким email вже зареєстрований! Спробуйте увійти.');
+
+            // Підсвічуємо поле червоним для наочності
+            emailInput.classList.remove('is-valid');
+            emailInput.classList.add('is-invalid');
+            emailInput.focus();
+            return;
+        }
+
+        // 3. Якщо перевірку пройдено — створюємо об'єкт
         const newUser = { name, email, passwordHash: safeBtoa(password) };
 
+        // 4. Зберігаємо
         const isSaved = saveNewUser(newUser);
+
+
         if (!isSaved) {
-            alert('Користувач з таким email вже існує!');
+            alert('Помилка збереження. Можливо, користувач вже існує.');
             return;
         }
 
@@ -51,6 +74,7 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         onRevalidateBooking();
     });
 
+    // --- ВХІД ---
     loginForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value.trim().toLowerCase();
@@ -79,6 +103,7 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         onRevalidateBooking();
     });
 
+    // --- ВИХІД ---
     logoutBtn.addEventListener('click', () => {
         clearCurrentUser();
         updateAuthUI();
@@ -86,11 +111,13 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         onRevalidateBooking();
     });
 
+    // --- ЖИВА ВАЛІДАЦІЯ ---
     [document.getElementById('login-email'), document.getElementById('register-email')].forEach(input => {
         if (!input) return;
         input.addEventListener('input', function() {
+            this.classList.remove('is-invalid');
+
             if (validateEmail(this.value)) {
-                this.classList.remove('is-invalid');
                 this.classList.add('is-valid');
             } else {
                 this.classList.remove('is-valid');
