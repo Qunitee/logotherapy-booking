@@ -6,7 +6,6 @@ function safeBtoa(str) {
     try {
         return btoa(unescape(encodeURIComponent(str)));
     } catch (e) {
-        console.error("Ошибка кодирования пароля", e);
         return '';
     }
 }
@@ -18,7 +17,6 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
 
     if (!loginForm || !registerForm || !logoutBtn) return;
 
-    // --- ЛОГІКА РЕЄСТРАЦІЇ ---
     registerForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const name = document.getElementById('register-name').value.trim();
@@ -53,7 +51,6 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         onRevalidateBooking();
     });
 
-    // --- ЛОГІКА ВХОДУ ---
     loginForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value.trim().toLowerCase();
