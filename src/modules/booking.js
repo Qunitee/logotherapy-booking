@@ -60,7 +60,6 @@ export function initBooking() {
     });
 
     phoneInput.addEventListener('blur', () => {
-        // Форматуємо телефон при втраті фокусу
         if (validatePhone(phoneInput.value)) {
             phoneInput.value = normalizePhone(phoneInput.value);
             phoneInput.classList.remove('is-invalid');
@@ -100,14 +99,13 @@ export function initBooking() {
             return;
         }
 
-        // Фільтруємо записи поточного користувача
         const own = all.filter(a => a.userEmail === user.email);
 
         // Беремо тільки майбутні
         const upcoming = own
             .filter(a => new Date(`${a.date}T${a.time}`) >= now)
             .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`))
-            .slice(0, 5); // Показуємо тільки 5 найближчих
+            .slice(0, 5);
 
         if (upcoming.length === 0) {
             const li = document.createElement('li');
@@ -120,7 +118,6 @@ export function initBooking() {
         upcoming.forEach(app => {
             const li = document.createElement('li');
             li.className = 'list-group-item d-flex justify-content-between align-items-center';
-            // Форматуємо дату для краси
             const dateObj = new Date(app.date);
             const dateStr = dateObj.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
 
@@ -137,13 +134,12 @@ export function initBooking() {
     // --- ЛОГІКА ВИБОРУ ДАТИ ТА ЧАСУ ---
     const onDateSelected = (dateStr) => {
         currentSelectedDate = dateStr;
-        selectedTime = null; // Скидаємо час при зміні дати
-
+        selectedTime = null;
         selectedDateDisplay.textContent = new Date(dateStr).toLocaleDateString('uk-UA', {
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
         });
 
-        validateState(); // Оновлюємо кнопку (вона стане неактивною, бо час не вибрано)
+        validateState();
 
         slotsContainer.innerHTML = '';
         const hours = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00'];
@@ -152,7 +148,6 @@ export function initBooking() {
             const btn = document.createElement('button');
             const isTaken = isSlotTaken(dateStr, time);
 
-            // Стилізація кнопок часу
             btn.className = isTaken
                 ? 'btn btn-secondary time-slot disabled opacity-50' // Зайнято
                 : 'btn btn-outline-primary time-slot'; // Вільно
@@ -163,14 +158,12 @@ export function initBooking() {
 
             if (!isTaken) {
                 btn.addEventListener('click', () => {
-                    // Знімаємо виділення з інших
                     document.querySelectorAll('.time-slot').forEach(b => {
                         if (!b.disabled) {
                             b.classList.remove('btn-primary', 'text-white');
                             b.classList.add('btn-outline-primary');
                         }
                     });
-                    // Виділяємо поточну
                     btn.classList.remove('btn-outline-primary');
                     btn.classList.add('btn-primary', 'text-white');
 
@@ -233,7 +226,6 @@ export function initBooking() {
         phoneInput.classList.remove('is-valid', 'is-invalid');
         nameInput.classList.remove('is-valid', 'is-invalid');
 
-        // Відновлюємо ім'я користувача, щоб йому не треба було писати його знову
         if (user && user.name) {
             nameInput.value = user.name;
             nameInput.classList.add('is-valid');
