@@ -2,10 +2,10 @@ import axios from 'axios';
 import materialsData from '../data/logotherapy-materials.json';
 
 const QUOTE_CACHE_KEY = 'logotherapy_quote_cache';
-const QUOTE_TTL_MS = 1000 * 60 * 60;
+const QUOTE_TTL_MS = 1000 * 6;
 
 const ARTICLES_CACHE_KEY = 'logotherapy_articles_cache';
-const ARTICLES_TTL_MS = 1000 * 60 * 60;
+const ARTICLES_TTL_MS = 1000 * 6;
 
 export async function fetchDailyQuote() {
     try {
@@ -17,20 +17,27 @@ export async function fetchDailyQuote() {
             }
         }
 
-        const response = await axios.get('https://api.allorigins.win/raw?url=https://zenquotes.io/api/random');
+        const targetUrl = 'https://zenquotes.io/api/random';
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_=${Date.now()}`;
 
-        const data = response.data[0];
-        const normalized = {
-            text: data.q,
-            author: data.a
-        };
+        const response = await axios.get(`/api-quotes/random?_=${Date.now()}`);
+        if (response.data && response.data[0]) {
+            const data = response.data[0];
+            const normalized = {
+                text: data.q,
+                author: data.a
+            };
 
-        localStorage.setItem(QUOTE_CACHE_KEY, JSON.stringify({
-            timestamp: Date.now(),
-            data: normalized
-        }));
+            localStorage.setItem(QUOTE_CACHE_KEY, JSON.stringify({
+                timestamp: Date.now(),
+                data: normalized
+            }));
 
-        return normalized;
+            return normalized;
+        }
+
+        throw new Error('Empty API response');
+
     } catch (error) {
         console.warn('Quote API failed, using fallback', error);
         return {

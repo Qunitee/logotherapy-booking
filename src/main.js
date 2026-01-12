@@ -1,8 +1,16 @@
 import './style.css';
 import { Calendar } from './modules/calendar.js';
 import { fetchDailyQuote, fetchArticlesPage } from './modules/api.js';
-import { getAppointments, saveAppointment, isSlotTaken } from './modules/storage.js';
-import { validatePhone, validateEmail } from './modules/validation.js';
+import {
+    getAppointments,
+    saveAppointment,
+    isSlotTaken,
+    getAllUsers,
+    saveNewUser,
+    getSessionUser,
+    setSessionUser
+} from './modules/storage.js';
+import { validatePhone, validateEmail, normalizePhone } from './modules/validation.js';
 
 let selectedTime = null;
 let currentSelectedDate = null;
@@ -13,33 +21,20 @@ const ARTICLES_LIMIT = 10;
 let articlesTotal = 0;
 let isLoadingArticles = false;
 
-const USER_KEY = 'logotherapy_user';
-
 function loadCurrentUser() {
-    const raw = localStorage.getItem(USER_KEY);
-    if (!raw) return null;
-    try {
-        const user = JSON.parse(raw);
-        if (user && user.email) {
-            user.email = user.email.toLowerCase();
-        }
-        return user;
-    } catch {
-        return null;
+    const user = getSessionUser();
+    if (user && user.email) {
+        user.email = user.email.toLowerCase();
     }
+    return user;
 }
 
 function saveCurrentUser(user) {
-    if (!user) {
-        localStorage.removeItem(USER_KEY);
-        currentUser = null;
-        return;
-    }
-    if (user.email) {
+    if (user && user.email) {
         user.email = user.email.toLowerCase();
     }
     currentUser = user;
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    setSessionUser(user);
 }
 
 function updateAuthUI() {
@@ -65,17 +60,21 @@ function updateAuthUI() {
     }
 }
 
-// --- Ініціалізація ---
 document.addEventListener('DOMContentLoaded', async () => {
     currentUser = loadCurrentUser();
     updateAuthUI();
 
-    const quoteData = await fetchDailyQuote();
-    document.getElementById('quote-text').textContent = `"${quoteData.text}"`;
-    document.getElementById('quote-author').textContent = quoteData.author;
+    // Завантаження цитати
+    try {
+        const quoteData = await fetchDailyQuote();
+        document.getElementById('quote-text').textContent = `"${quoteData.text}"`;
+        document.getElementById('quote-author').textContent = quoteData.author;
+    } catch (e) {
+        console.error('Не вдалося завантажити цитату', e);
+    }
 
+    // Календар
     const calendar = new Calendar(onDateSelected);
-
     const titleEl = document.getElementById('calendar-title');
     const updateCalendarUI = () => {
         titleEl.textContent = calendar.currentMonthName;
@@ -94,32 +93,84 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     updateCalendarUI();
 
+    // --- ЛОГІКА БРОНЮВАННЯ ТА ВАЛІДАЦІЇ ---
     const form = document.getElementById('booking-form');
     const submitBtn = document.getElementById('submit-btn');
     const phoneInput = document.getElementById('phone');
     const nameInput = document.getElementById('name');
 
+    // Функція перевірки загального стану форми
     const validateState = () => {
         const isPhoneValid = validatePhone(phoneInput.value);
         const isNameValid = nameInput.value.length >= 2;
         const isTimeSelected = selectedTime !== null;
         const isLoggedIn = !!currentUser;
 
+        // Кнопка активна тільки якщо всі умови виконані
         submitBtn.disabled = !(isPhoneValid && isNameValid && isTimeSelected && isLoggedIn);
     };
 
-    [phoneInput, nameInput].forEach(el => el.addEventListener('input', validateState));
+    // 1. Обробка введення телефону (візуалізація помилок)
+    phoneInput.addEventListener('input', () => {
+        const isValid = validatePhone(phoneInput.value);
+        if (isValid) {
+            phoneInput.classList.remove('is-invalid');
+            phoneInput.classList.add('is-valid');
+        } else {
+            phoneInput.classList.remove('is-valid');
+            // Показуємо помилку тільки якщо поле не порожнє
+            if (phoneInput.value.length > 0) {
+                phoneInput.classList.add('is-invalid');
+            } else {
+                phoneInput.classList.remove('is-invalid');
+            }
+        }
+        validateState();
+    });
 
+    // 2. Обробка втрати фокусу телефону (нормалізація: 099 -> +38099)
+    phoneInput.addEventListener('blur', () => {
+        if (validatePhone(phoneInput.value)) {
+            phoneInput.value = normalizePhone(phoneInput.value);
+            // Оновлюємо класи після зміни значення
+            phoneInput.classList.remove('is-invalid');
+            phoneInput.classList.add('is-valid');
+        }
+        validateState();
+    });
+
+    // 3. Обробка введення імені
+    nameInput.addEventListener('input', () => {
+        if (nameInput.value.length >= 2) {
+            nameInput.classList.remove('is-invalid');
+            nameInput.classList.add('is-valid');
+        } else {
+            nameInput.classList.remove('is-valid');
+            if (nameInput.value.length > 0) {
+                nameInput.classList.add('is-invalid');
+            }
+        }
+        validateState();
+    });
+
+    // Обробка відправки форми
     form.addEventListener('submit', (e) => {
         e.preventDefault();
-
         if (!currentSelectedDate || !selectedTime || !currentUser) return;
+
+        // Фінальна нормалізація телефону перед збереженням
+        const finalPhone = normalizePhone(phoneInput.value);
+
+        if (!validatePhone(finalPhone)) {
+            alert('Будь ласка, введіть коректний номер телефону.');
+            return;
+        }
 
         const appointment = {
             id: crypto.randomUUID(),
             userEmail: currentUser.email,
             name: nameInput.value,
-            phone: phoneInput.value,
+            phone: finalPhone, // Зберігаємо нормалізований номер
             date: currentSelectedDate,
             time: selectedTime,
             createdAt: new Date().toISOString()
@@ -127,6 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         saveAppointment(appointment);
 
+        // Модальне вікно успіху
         const modalEl = document.getElementById('successModal');
         document.getElementById('modal-date').textContent = currentSelectedDate;
         document.getElementById('modal-time').textContent = selectedTime;
@@ -134,9 +186,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const modal = new bootstrap.Modal(modalEl);
         modal.show();
 
+        // Очищення форми
         form.reset();
+        phoneInput.classList.remove('is-valid', 'is-invalid');
+        nameInput.classList.remove('is-valid', 'is-invalid');
+
         selectedTime = null;
-        onDateSelected(currentSelectedDate);
+        onDateSelected(currentSelectedDate); // Оновити слоти (прибрати зайнятий)
         validateState();
         renderUpcomingAppointments();
     });
@@ -151,6 +207,7 @@ function onDateSelected(dateStr) {
     selectedTime = null;
 
     document.getElementById('selected-date-display').textContent = dateStr;
+    // При зміні дати скидаємо час і блокуємо кнопку
     document.getElementById('submit-btn').disabled = true;
 
     const slotsContainer = document.getElementById('time-slots');
@@ -168,6 +225,7 @@ function onDateSelected(dateStr) {
 
         btn.textContent = time;
         btn.disabled = isTaken;
+        btn.type = "button";
 
         if (!isTaken) {
             btn.addEventListener('click', () => {
@@ -181,10 +239,10 @@ function onDateSelected(dateStr) {
                 btn.classList.add('btn-primary', 'text-white');
 
                 selectedTime = time;
-                document.getElementById('name').dispatchEvent(new Event('input'));
+                // Тригеримо перевірку валідності кнопки
+                document.getElementById('phone').dispatchEvent(new Event('input'));
             });
         }
-
         slotsContainer.appendChild(btn);
     });
 }
@@ -194,104 +252,60 @@ function setupAuthHandlers(revalidateBookingForm) {
     const registerForm = document.getElementById('register-form');
     const logoutBtn = document.getElementById('logout-btn');
 
+    // Реєстрація
     registerForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const name = document.getElementById('register-name').value.trim();
         const email = document.getElementById('register-email').value.trim().toLowerCase();
         const password = document.getElementById('register-password').value.trim();
 
-        if (!name || name.length < 2) {
-            document.getElementById('register-name').classList.add('is-invalid');
+        if (!name || name.length < 2 || !validateEmail(email) || password.length < 6) {
+            alert('Перевірте коректність введених даних');
             return;
         }
 
-        if (!validateEmail(email)) {
-            document.getElementById('register-email').classList.add('is-invalid');
+        const newUser = { name, email, passwordHash: btoa(password) };
+
+        const isSaved = saveNewUser(newUser);
+        if (!isSaved) {
+            alert('Користувач з таким email вже існує!');
             return;
         }
 
-        if (password.length < 6) {
-            document.getElementById('register-password').classList.add('is-invalid');
-            return;
-        }
-
-        const user = { name, email, passwordHash: btoa(password) };
-        saveCurrentUser(user);
+        saveCurrentUser(newUser);
         updateAuthUI();
 
         registerForm.reset();
-        document.querySelectorAll('#register-pane .is-valid, #register-pane .is-invalid').forEach(el => {
-            el.classList.remove('is-valid', 'is-invalid');
-        });
+        registerForm.querySelectorAll('input').forEach(i => i.classList.remove('is-valid', 'is-invalid'));
 
         const authModalEl = document.getElementById('authModal');
         bootstrap.Modal.getInstance(authModalEl)?.hide();
         revalidateBookingForm();
     });
 
+    // Логін
     loginForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value.trim().toLowerCase();
         const password = document.getElementById('login-password').value.trim();
 
-        if (!validateEmail(email)) {
-            document.getElementById('login-email').classList.add('is-invalid');
-            return;
-        }
+        const allUsers = getAllUsers();
+        const foundUser = allUsers.find(u => u.email === email);
 
-        const stored = loadCurrentUser();
-        
-        if (!stored) {
-            alert('Користувача з таким email не знайдено. Будь ласка, зареєструйтеся.');
-            return;
-        }
-
-        const storedEmail = (stored.email || '').toLowerCase();
-        const inputEmail = email.toLowerCase();
-        const emailMatch = storedEmail === inputEmail;
-        const passwordMatch = stored.passwordHash === btoa(password);
-
-        if (!emailMatch || !passwordMatch) {
+        if (!foundUser || foundUser.passwordHash !== btoa(password)) {
             alert('Невірний email або пароль');
-            document.getElementById('login-password').value = '';
             return;
         }
 
-        saveCurrentUser(stored);
+        saveCurrentUser(foundUser);
         updateAuthUI();
 
         loginForm.reset();
-        document.querySelectorAll('#login-pane .is-valid, #login-pane .is-invalid').forEach(el => {
-            el.classList.remove('is-valid', 'is-invalid');
-        });
+        loginForm.querySelectorAll('input').forEach(i => i.classList.remove('is-valid', 'is-invalid'));
 
         const authModalEl = document.getElementById('authModal');
         bootstrap.Modal.getInstance(authModalEl)?.hide();
         revalidateBookingForm();
-    });
-
-    document.getElementById('login-email').addEventListener('input', function() {
-        if (validateEmail(this.value)) {
-            this.classList.remove('is-invalid');
-            this.classList.add('is-valid');
-        } else {
-            this.classList.remove('is-valid');
-            if (this.value.length > 0) {
-                this.classList.add('is-invalid');
-            }
-        }
-    });
-
-    document.getElementById('register-email').addEventListener('input', function() {
-        if (validateEmail(this.value)) {
-            this.classList.remove('is-invalid');
-            this.classList.add('is-valid');
-        } else {
-            this.classList.remove('is-valid');
-            if (this.value.length > 0) {
-                this.classList.add('is-invalid');
-            }
-        }
     });
 
     logoutBtn.addEventListener('click', () => {
@@ -299,11 +313,27 @@ function setupAuthHandlers(revalidateBookingForm) {
         updateAuthUI();
         revalidateBookingForm();
     });
+
+    // Жива валідація Email у модалці
+    [document.getElementById('login-email'), document.getElementById('register-email')].forEach(input => {
+        if (!input) return;
+        input.addEventListener('input', function() {
+            if (validateEmail(this.value)) {
+                this.classList.remove('is-invalid');
+                this.classList.add('is-valid');
+            } else {
+                this.classList.remove('is-valid');
+                if (this.value.length > 0) this.classList.add('is-invalid');
+            }
+        });
+    });
 }
 
 async function loadArticlesPage() {
     if (isLoadingArticles) return;
     const listEl = document.getElementById('articles-list');
+    if (!listEl) return;
+
     const loader = document.getElementById('articles-loader');
     const endEl = document.getElementById('articles-end');
     const counter = document.getElementById('articles-counter');
@@ -329,7 +359,7 @@ async function loadArticlesPage() {
             listEl.appendChild(a);
         });
 
-        counter.textContent = `${listEl.children.length} з ${articlesTotal} матеріалів`;
+        if (counter) counter.textContent = `${listEl.children.length} з ${articlesTotal} матеріалів`;
         articlesPage += 1;
     } catch (e) {
         console.error('Помилка завантаження матеріалів', e);
@@ -342,14 +372,11 @@ async function loadArticlesPage() {
 function setupArticlesInfiniteScroll() {
     const listEl = document.getElementById('articles-list');
     if (!listEl) return;
-
     listEl.addEventListener('scroll', () => {
-        const threshold = 80;
-        if (listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - threshold) {
+        if (listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 80) {
             loadArticlesPage();
         }
     });
-
     loadArticlesPage();
 }
 
@@ -363,7 +390,7 @@ function renderUpcomingAppointments() {
 
     const own = currentUser
         ? all.filter(a => a.userEmail === currentUser.email)
-        : all;
+        : [];
 
     const upcoming = own
         .filter(a => new Date(`${a.date}T${a.time}`) >= now)
@@ -373,7 +400,7 @@ function renderUpcomingAppointments() {
     if (upcoming.length === 0) {
         const li = document.createElement('li');
         li.className = 'list-group-item small text-muted';
-        li.textContent = 'У вас поки немає запланованих сесій.';
+        li.textContent = currentUser ? 'У вас поки немає запланованих сесій.' : 'Увійдіть, щоб бачити ваші записи.';
         listEl.appendChild(li);
         return;
     }
