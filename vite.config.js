@@ -11,7 +11,7 @@ export default defineConfig({
             },
         },
     },
-    base: '/logotherapy-booking/',
+    base: '/',
     build: {
         rollupOptions: {
             input: {
