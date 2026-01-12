@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api-quotes/:match*",
+      "destination": "https://zenquotes.io/api/:match*"
+    }
+  ]
+}
