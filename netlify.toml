@@ -1,0 +1,9 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[[redirects]]
+  from = "/api-quotes/*"
+  to = "https://zenquotes.io/api/:splat"
+  status = 200
+  force = true
