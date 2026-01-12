@@ -3,13 +3,16 @@ import { validatePhone, normalizePhone } from './validation.js';
 import { getCurrentUser } from './session.js';
 
 export function initBooking() {
+    // Отримуємо елементи форми
     const form = document.getElementById('booking-form');
     const submitBtn = document.getElementById('submit-btn');
     const phoneInput = document.getElementById('phone');
     const nameInput = document.getElementById('name');
     const selectedDateDisplay = document.getElementById('selected-date-display');
     const slotsContainer = document.getElementById('time-slots');
+    const upcomingListEl = document.getElementById('upcoming-list');
 
+    // Якщо елементів немає на сторінці (наприклад, ми не на index.html), повертаємо заглушки
     if (!form || !submitBtn || !phoneInput || !nameInput || !selectedDateDisplay || !slotsContainer) {
         return {
             onDateSelected: () => {},
@@ -26,10 +29,19 @@ export function initBooking() {
         const isPhoneValid = validatePhone(phoneInput.value);
         const isNameValid = nameInput.value.length >= 2;
         const isTimeSelected = selectedTime !== null;
-        const isLoggedIn = !!getCurrentUser();
-        submitBtn.disabled = !(isPhoneValid && isNameValid && isTimeSelected && isLoggedIn);
+        const user = getCurrentUser();
+
+        // Кнопка активна тільки якщо все валідно І користувач залогінений
+        submitBtn.disabled = !(isPhoneValid && isNameValid && isTimeSelected && user);
+
+        if (!user) {
+            submitBtn.textContent = 'Увійдіть, щоб записатися';
+        } else {
+            submitBtn.textContent = 'Записатися';
+        }
     };
 
+    // --- ОБРОБНИКИ ПОЛІВ ---
     phoneInput.addEventListener('input', () => {
         const isValid = validatePhone(phoneInput.value);
         if (isValid) {
@@ -37,6 +49,7 @@ export function initBooking() {
             phoneInput.classList.add('is-valid');
         } else {
             phoneInput.classList.remove('is-valid');
+            // Показуємо помилку тільки якщо щось введено
             if (phoneInput.value.length > 0) {
                 phoneInput.classList.add('is-invalid');
             } else {
@@ -47,6 +60,7 @@ export function initBooking() {
     });
 
     phoneInput.addEventListener('blur', () => {
+        // Форматуємо телефон при втраті фокусу
         if (validatePhone(phoneInput.value)) {
             phoneInput.value = normalizePhone(phoneInput.value);
             phoneInput.classList.remove('is-invalid');
@@ -68,43 +82,68 @@ export function initBooking() {
         validateState();
     });
 
+    // --- ВІДОБРАЖЕННЯ СПИСКУ МАЙБУТНІХ ЗАПИСІВ (Сайдбар) ---
     const renderUpcomingAppointments = () => {
-        const listEl = document.getElementById('upcoming-list');
-        if (!listEl) return;
+        if (!upcomingListEl) return;
 
-        listEl.innerHTML = '';
+        upcomingListEl.innerHTML = '';
         const all = getAppointments();
         const now = new Date();
         const user = getCurrentUser();
 
-        const own = user ? all.filter(a => a.userEmail === user.email) : [];
+        // Якщо користувач не увійшов
+        if (!user) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item small text-muted text-center';
+            li.innerHTML = '<i class="bi bi-lock"></i> Увійдіть, щоб бачити ваші записи.';
+            upcomingListEl.appendChild(li);
+            return;
+        }
+
+        // Фільтруємо записи поточного користувача
+        const own = all.filter(a => a.userEmail === user.email);
+
+        // Беремо тільки майбутні
         const upcoming = own
             .filter(a => new Date(`${a.date}T${a.time}`) >= now)
             .sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`))
-            .slice(0, 5);
+            .slice(0, 5); // Показуємо тільки 5 найближчих
 
         if (upcoming.length === 0) {
             const li = document.createElement('li');
-            li.className = 'list-group-item small text-muted';
-            li.textContent = user ? 'У вас поки немає запланованих сесій.' : 'Увійдіть, щоб бачити ваші записи.';
-            listEl.appendChild(li);
+            li.className = 'list-group-item small text-muted text-center';
+            li.textContent = 'У вас поки немає запланованих сесій.';
+            upcomingListEl.appendChild(li);
             return;
         }
 
         upcoming.forEach(app => {
             const li = document.createElement('li');
             li.className = 'list-group-item d-flex justify-content-between align-items-center';
-            li.innerHTML = `<span>${app.date} • ${app.time}</span><span class="badge text-bg-primary">${app.name}</span>`;
-            listEl.appendChild(li);
+            // Форматуємо дату для краси
+            const dateObj = new Date(app.date);
+            const dateStr = dateObj.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+
+            li.innerHTML = `
+                <div>
+                    <span class="fw-bold">${dateStr}</span> <span class="text-muted small">${app.time}</span>
+                </div>
+                <span class="badge text-bg-primary rounded-pill"><i class="bi bi-check"></i></span>
+            `;
+            upcomingListEl.appendChild(li);
         });
     };
 
+    // --- ЛОГІКА ВИБОРУ ДАТИ ТА ЧАСУ ---
     const onDateSelected = (dateStr) => {
         currentSelectedDate = dateStr;
-        selectedTime = null;
+        selectedTime = null; // Скидаємо час при зміні дати
 
-        selectedDateDisplay.textContent = dateStr;
-        submitBtn.disabled = true;
+        selectedDateDisplay.textContent = new Date(dateStr).toLocaleDateString('uk-UA', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        validateState(); // Оновлюємо кнопку (вона стане неактивною, бо час не вибрано)
 
         slotsContainer.innerHTML = '';
         const hours = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00'];
@@ -113,9 +152,10 @@ export function initBooking() {
             const btn = document.createElement('button');
             const isTaken = isSlotTaken(dateStr, time);
 
+            // Стилізація кнопок часу
             btn.className = isTaken
-                ? 'btn btn-secondary time-slot disabled'
-                : 'btn btn-outline-primary time-slot';
+                ? 'btn btn-secondary time-slot disabled opacity-50' // Зайнято
+                : 'btn btn-outline-primary time-slot'; // Вільно
 
             btn.textContent = time;
             btn.disabled = isTaken;
@@ -123,17 +163,19 @@ export function initBooking() {
 
             if (!isTaken) {
                 btn.addEventListener('click', () => {
+                    // Знімаємо виділення з інших
                     document.querySelectorAll('.time-slot').forEach(b => {
                         if (!b.disabled) {
                             b.classList.remove('btn-primary', 'text-white');
                             b.classList.add('btn-outline-primary');
                         }
                     });
+                    // Виділяємо поточну
                     btn.classList.remove('btn-outline-primary');
                     btn.classList.add('btn-primary', 'text-white');
 
                     selectedTime = time;
-                    phoneInput.dispatchEvent(new Event('input'));
+                    validateState(); // Перевіряємо, чи можна розблокувати кнопку "Записатися"
                 });
             }
             slotsContainer.appendChild(btn);
@@ -143,7 +185,11 @@ export function initBooking() {
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         const user = getCurrentUser();
-        if (!currentSelectedDate || !selectedTime || !user) return;
+
+        if (!currentSelectedDate || !selectedTime || !user) {
+            if (!user) alert('Будь ласка, увійдіть у систему.');
+            return;
+        }
 
         const finalPhone = normalizePhone(phoneInput.value);
         if (!validatePhone(finalPhone)) {
@@ -151,8 +197,13 @@ export function initBooking() {
             return;
         }
 
+        // Генерація ID
+        const appointmentId = typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : Date.now().toString();
+
         const appointment = {
-            id: crypto.randomUUID(),
+            id: appointmentId,
             userEmail: user.email,
             name: nameInput.value,
             phone: finalPhone,
@@ -163,31 +214,58 @@ export function initBooking() {
 
         saveAppointment(appointment);
 
+        // 2. Показуємо успіх (Модалка)
         const modalEl = document.getElementById('successModal');
-        document.getElementById('modal-date').textContent = currentSelectedDate;
-        document.getElementById('modal-time').textContent = selectedTime;
+        if (modalEl) {
+            document.getElementById('modal-date').textContent = currentSelectedDate;
+            document.getElementById('modal-time').textContent = selectedTime;
 
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
+            if (window.bootstrap) {
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            }
+        } else {
+            alert(`Успішно! Ви записані на ${currentSelectedDate} о ${selectedTime}`);
+        }
 
+        // 3. Очищення форми
         form.reset();
         phoneInput.classList.remove('is-valid', 'is-invalid');
         nameInput.classList.remove('is-valid', 'is-invalid');
 
+        // Відновлюємо ім'я користувача, щоб йому не треба було писати його знову
+        if (user && user.name) {
+            nameInput.value = user.name;
+            nameInput.classList.add('is-valid');
+        }
+
+
+        const dateToRefresh = currentSelectedDate;
         selectedTime = null;
-        onDateSelected(currentSelectedDate);
-        validateState();
+
+        onDateSelected(dateToRefresh);
         renderUpcomingAppointments();
+        validateState();
     });
 
     return {
         onDateSelected,
         revalidateBooking: validateState,
         handleUserChange: () => {
+            const user = getCurrentUser();
+
+            if (user && user.name) {
+                nameInput.value = user.name;
+                nameInput.classList.add('is-valid');
+                nameInput.classList.remove('is-invalid');
+            } else {
+                nameInput.value = '';
+                nameInput.classList.remove('is-valid');
+            }
+
             validateState();
             renderUpcomingAppointments();
         },
         renderUpcomingAppointments
     };
 }
-
