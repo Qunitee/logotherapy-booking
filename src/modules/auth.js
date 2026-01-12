@@ -2,6 +2,15 @@ import { getAllUsers, saveNewUser } from './storage.js';
 import { validateEmail } from './validation.js';
 import { saveCurrentUser, clearCurrentUser, updateAuthUI } from './session.js';
 
+function safeBtoa(str) {
+    try {
+        return btoa(unescape(encodeURIComponent(str)));
+    } catch (e) {
+        console.error("Ошибка кодирования пароля", e);
+        return '';
+    }
+}
+
 export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking = () => {} } = {}) {
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
@@ -9,6 +18,7 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
 
     if (!loginForm || !registerForm || !logoutBtn) return;
 
+    // --- ЛОГІКА РЕЄСТРАЦІЇ ---
     registerForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const name = document.getElementById('register-name').value.trim();
@@ -20,7 +30,7 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
             return;
         }
 
-        const newUser = { name, email, passwordHash: btoa(password) };
+        const newUser = { name, email, passwordHash: safeBtoa(password) };
 
         const isSaved = saveNewUser(newUser);
         if (!isSaved) {
@@ -36,10 +46,14 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         registerForm.querySelectorAll('input').forEach(i => i.classList.remove('is-valid', 'is-invalid'));
 
         const authModalEl = document.getElementById('authModal');
-        bootstrap.Modal.getInstance(authModalEl)?.hide();
+        if (window.bootstrap) {
+            const modal = bootstrap.Modal.getInstance(authModalEl);
+            if (modal) modal.hide();
+        }
         onRevalidateBooking();
     });
 
+    // --- ЛОГІКА ВХОДУ ---
     loginForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value.trim().toLowerCase();
@@ -48,7 +62,7 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         const allUsers = getAllUsers();
         const foundUser = allUsers.find(u => u.email === email);
 
-        if (!foundUser || foundUser.passwordHash !== btoa(password)) {
+        if (!foundUser || foundUser.passwordHash !== safeBtoa(password)) {
             alert('Невірний email або пароль');
             return;
         }
@@ -61,7 +75,10 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         loginForm.querySelectorAll('input').forEach(i => i.classList.remove('is-valid', 'is-invalid'));
 
         const authModalEl = document.getElementById('authModal');
-        bootstrap.Modal.getInstance(authModalEl)?.hide();
+        if (window.bootstrap) {
+            const modal = bootstrap.Modal.getInstance(authModalEl);
+            if (modal) modal.hide();
+        }
         onRevalidateBooking();
     });
 
@@ -85,4 +102,3 @@ export function setupAuthHandlers({ onAuthChange = () => {}, onRevalidateBooking
         });
     });
 }
-
