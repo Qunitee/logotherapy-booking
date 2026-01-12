@@ -20,7 +20,7 @@ export async function fetchDailyQuote() {
         const targetUrl = 'https://zenquotes.io/api/random';
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}&_=${Date.now()}`;
 
-        const response = await axios.get(`/api-quotes/random?_=${Date.now()}`);
+        const response = await axios.get(proxyUrl);
         if (response.data && response.data[0]) {
             const data = response.data[0];
             const normalized = {
